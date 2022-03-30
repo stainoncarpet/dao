@@ -14,4 +14,8 @@ contract DAOToken is ERC20, Ownable {
     function destroyContract() external onlyOwner {
         selfdestruct(payable(owner()));
     }
+
+    function decimals() public view override returns(uint8) {
+        return 0;
+    }
 }

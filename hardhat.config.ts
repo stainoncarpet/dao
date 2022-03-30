@@ -9,7 +9,7 @@ import "hardhat-gas-reporter";
 import "solidity-coverage";
 
 dotenv.config();
-
+/*
 task("vote", "")
   .addParam("", "")
   .setAction(async (taskArguments, hre) => {
@@ -129,9 +129,9 @@ task("deposit", "")
       console.log("Receipt: ", swapTx);
   })
 ;
-
+*/
 const config: HardhatUserConfig = {
-  solidity: "0.8.4",
+  solidity: "0.8.11",
   networks: {
     ropsten: {
       url: process.env.ROPSTEN_URL || "",
