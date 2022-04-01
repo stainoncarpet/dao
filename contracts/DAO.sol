@@ -9,10 +9,10 @@ import "hardhat/console.sol";
 contract DAO is Ownable {
     address public chairPerson;
     address public voteToken;
-    uint256 public minimumQuorum; // measured in tokens, e.g. 70% of all existing tokens
-    uint256 public debatingPeriodDuration; // e.g. 3 days
+    uint256 public minimumQuorum;
+    uint256 public debatingPeriodDuration;
     mapping(address => uint256) public memberBalances;
-    mapping(address => uint256[]) public memberParticipation;
+    mapping(address => uint256[]) public memberCurrentParticipation;
 
     struct Proposal {
         uint256 startedAt;
@@ -39,26 +39,28 @@ contract DAO is Ownable {
     }
 
     function deposit(uint256 amount) external {
-        (bool success, bytes memory data) = voteToken.call{value:0}(abi.encodeWithSignature("transferFrom(address,address,uint256)", msg.sender, address(this), amount));
-        require(success, "Deposit failed");
-        memberBalances[msg.sender] = amount;
+        (bool success, bytes memory data) = voteToken.call(abi.encodeWithSignature("transferFrom(address,address,uint256)", msg.sender, address(this), amount));
+        if(success) { memberBalances[msg.sender] += amount; }
     }
 
     function withdraw(uint256 amount) external {
-        uint256 balance = memberBalances[msg.sender];
-        require(balance >= amount, "Amount exceeds balance");
+        require(memberBalances[msg.sender] >= amount, "Amount exceeds balance");
 
-        // check if user is participating in ongoing proposals
-        // for (uint256 i = 0; i < proposals.length; i++) {
-        //    if(proposals[i].votesByAddress[msg.sender] > 0){
-        //        revert("Can't withdraw while participating in ongoing proposals");
-        //    } 
-        // }
+        bool isWithdrawalAllowed = true;
+        uint256[] storage proposalIds = memberCurrentParticipation[msg.sender];
 
-        require(memberParticipation[msg.sender].length == 0, "Can't withdraw while participating in ongoing proposals");
+        for (uint256 i = 0; i < proposalIds.length; i++) {
+            if(proposals[proposalIds[i]].isFinished) {
+                delete proposalIds[i];
+            } else {
+                isWithdrawalAllowed = false;
+            }
+        }
 
-        memberBalances[msg.sender] -= amount;
-        voteToken.call{value:0}(abi.encodeWithSignature("transfer(address,uint256)", msg.sender, amount));
+        require(isWithdrawalAllowed, "Can't withdraw while participating in ongoing proposals");
+
+        (bool success, ) = voteToken.call{value:0}(abi.encodeWithSignature("transfer(address,uint256)", msg.sender, amount));
+        if(success) { memberBalances[msg.sender] -= amount; } 
     }
 
     function addProposal(bytes calldata callData, address recipient, string calldata description) external onlyChair {
@@ -76,25 +78,19 @@ contract DAO is Ownable {
     }
 
     function vote(uint256 id, bool supportAgainst) external {
+        require(!proposals[id].isFinished, "Unable to vote: Proposal is finished");
         require(memberBalances[msg.sender] > 0, "Must own at least 1 token to vote");
 
-        //require(proposals[id].votesByAddress[msg.sender] == 0, "Already voted");
-        for (uint256 i = 0; i < memberParticipation[msg.sender].length; i++) {
-            if(memberParticipation[msg.sender][i] == id){
-                revert("Already voted");
-            }
+        for (uint256 i = 0; i < memberCurrentParticipation[msg.sender].length; i++) {
+            if(memberCurrentParticipation[msg.sender][i] == id){ revert("Already voted"); }
         }
 
-        require(!proposals[id].isFinished, "Unable to vote: Proposal is finished");
+        supportAgainst 
+            ? proposals[id].votedForTotal += memberBalances[msg.sender] 
+            : proposals[id].votedAgainstTotal += memberBalances[msg.sender]
+        ;
 
-        if(supportAgainst) {
-            //proposals[id].votesByAddress[msg.sender] = memberBalances[msg.sender];
-            proposals[id].votedForTotal += memberBalances[msg.sender];
-        } else {
-            //proposals[id].votesByAddress[msg.sender] = memberBalances[msg.sender];
-            proposals[id].votedAgainstTotal += memberBalances[msg.sender];
-        }
-        memberParticipation[msg.sender].push(id);
+        memberCurrentParticipation[msg.sender].push(id);
     }
 
     function finishProposal(uint256 id) external {
@@ -103,15 +99,9 @@ contract DAO is Ownable {
 
         uint256 votedForTotalPercentage = (proposals[id].votedForTotal * 100) / (proposals[id].votedAgainstTotal + proposals[id].votedForTotal);
 
-        require(votedForTotalPercentage >= 51, "Proposal hasn't been passed");
-        // (bool success, ) = proposals[id].recipient.call{value:0}(
-        //     proposals[id].callBytecode
-        // );
-
-        console.log(proposals[0].recipient);
-
-        (proposals[0].recipient).call(abi.encodeWithSignature("performProposalAction(address)", chairPerson));
-
+        if(votedForTotalPercentage >= 51) {
+            proposals[id].recipient.call(proposals[id].callBytecode);
+        }
         proposals[id].isFinished = true;
     }
 

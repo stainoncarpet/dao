@@ -35,7 +35,6 @@ contract DAOAssistant is Ownable {
                 )
             )
         );
-        console.log("ASS?");
     }
 
     function destroyContract() external onlyOwner {
