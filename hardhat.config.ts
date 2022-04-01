@@ -1,6 +1,7 @@
+/* eslint-disable no-unused-vars */
 /* eslint-disable prettier/prettier */
 import * as dotenv from "dotenv";
-
+import * as ethers from "ethers";
 import { HardhatUserConfig, task } from "hardhat/config";
 import "@nomiclabs/hardhat-etherscan";
 import "@nomiclabs/hardhat-waffle";
@@ -9,135 +10,116 @@ import "hardhat-gas-reporter";
 import "solidity-coverage";
 
 dotenv.config();
-/*
-task("vote", "")
-  .addParam("", "")
+
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      ETHERSCAN_API_KEY: string;
+      ALCHEMY_KEY: string;
+      METAMASK_PRIVATE_KEY: string;
+      METAMASK_PUBLIC_KEY: string;
+      COINMARKETCAP_API_KEY: string;
+      RINKEBY_URL: string;
+      RINKEBY_WS: string;
+    }
+  }
+}
+
+export const TOKEN_NAME = "DAOToken";
+export const TOKEN_SYMBOL = "DAOT";
+export const THREE_DAYS_IN_SECONDS = 60 * 60 * 24 * 3;
+export const TOKEN_INITIAL_SUPPLY = 1001;
+export const QUORUM = 700;
+export const HUNDRED_TOKENS = ethers.utils.parseUnits("100", 0);
+export const FIFTY_TOKENS = ethers.utils.parseUnits("50", 0);
+export const JSON_ABI = [{
+  "inputs": [{ "internalType": "address", "name": "chair", "type": "address" }],
+  "name": "performProposalAction",
+  "outputs": [{ "internalType": "bool", "name": "isPerformed", "type": "bool" }],
+  "stateMutability": "nonpayable",
+  "type": "function"
+}];
+
+task("vote", "Vote for or against a proposition")
+  .addParam("addressd", "Address of DAO contract")
+  .addParam("propid", "Proposal id")
+  .addParam("supportagainst", "For or against")
   .setAction(async (taskArguments, hre) => {
-      const contractSchema = require("./artifacts/contracts/Bridge.sol/Bridge.json");
+    const daoContractSchema = require("./artifacts/contracts/DAO.sol/DAO.json");
 
-      const alchemyProvider = new hre.ethers.providers.AlchemyProvider("rinkeby", process.env.ALCHEMY_KEY);
-      const walletOwner = new hre.ethers.Wallet(process.env.METAMASK_PRIVATE_KEY, alchemyProvider);
-      const bridge = new hre.ethers.Contract(taskArguments.bridge, contractSchema.abi, walletOwner);
+    const alchemyProvider = new hre.ethers.providers.AlchemyProvider("rinkeby", process.env.ALCHEMY_KEY);
+    const walletOwner = new hre.ethers.Wallet(process.env.METAMASK_PRIVATE_KEY, alchemyProvider);
+    const dao = new hre.ethers.Contract(taskArguments.addressd, daoContractSchema.abi, walletOwner);
 
-      const providerETH = new hre.ethers.providers.WebSocketProvider(process.env.RINKEBY_WS);
-      const providerBNB = new hre.ethers.providers.WebSocketProvider(process.env.BSCTEST_WS);
-      const filter = bridge.filters.swapFinalized(
-        process.env.METAMASK_PUBLIC_KEY, taskArguments.token, null, null, null, null, null
-      );
-      providerETH.on(filter, (event) => console.log("[ETH] Swap finalized event:", event));
-      providerBNB.on(filter, (event) => console.log("[BSC] Swap finalized event:", event));
+    const voteTx = await dao.vote(taskArguments.propid, taskArguments.supportagainst);
 
-      const swapTx = await bridge.redeem(
-        taskArguments.token, 
-        taskArguments.amount, 
-        taskArguments.chainfrom,
-        taskArguments.chainto,
-        taskArguments.nonce,
-        taskArguments.symbol
-      );
-
-      console.log("Receipt: ", swapTx);
+    console.log("Receipt: ", voteTx);
   })
 ;
 
-task("addproposal", "")
-  .addParam("", "")
+task("addprop", "Submit proposal to DAO")
+  .addParam("addressd", "Address of DAO contract")
+  .addParam("addressa", "Address of DAOAssistant contract")
+  .addParam("description", "Proposal description")
   .setAction(async (taskArguments, hre) => {
-      const contractSchema = require("./artifacts/contracts/Bridge.sol/Bridge.json");
+      const daoContractSchema = require("./artifacts/contracts/DAO.sol/DAO.json");
 
       const alchemyProvider = new hre.ethers.providers.AlchemyProvider("rinkeby", process.env.ALCHEMY_KEY);
       const walletOwner = new hre.ethers.Wallet(process.env.METAMASK_PRIVATE_KEY, alchemyProvider);
-      const bridge = new hre.ethers.Contract(taskArguments.bridge, contractSchema.abi, walletOwner);
+      const dao = new hre.ethers.Contract(taskArguments.addressd, daoContractSchema.abi, walletOwner);
 
-      const providerETH = new hre.ethers.providers.WebSocketProvider(process.env.RINKEBY_WS);
-      const providerBNB = new hre.ethers.providers.WebSocketProvider(process.env.BSCTEST_WS);
-      const filter = bridge.filters.swapFinalized(
-        process.env.METAMASK_PUBLIC_KEY, taskArguments.token, null, null, null, null, null
-      );
-      providerETH.on(filter, (event) => console.log("[ETH] Swap finalized event:", event));
-      providerBNB.on(filter, (event) => console.log("[BSC] Swap finalized event:", event));
+      const iface = new ethers.utils.Interface(JSON_ABI);
+      const calldata = iface.encodeFunctionData('performProposalAction',[taskArguments.addressa]);
+      const recipient = taskArguments.addressa;
+      const description = taskArguments.description;
 
-      const swapTx = await bridge.redeem(
-        taskArguments.token, 
-        taskArguments.amount, 
-        taskArguments.chainfrom,
-        taskArguments.chainto,
-        taskArguments.nonce,
-        taskArguments.symbol
-      );
+      const addProposalTx = await dao.addProposal(calldata, recipient, description);
 
-      console.log("Receipt: ", swapTx);
+      console.log("Receipt: ", addProposalTx);
   })
 ;
 
-task("finish", "")
-  .addParam("", "")
+task("finish", "Finish proposal")
+  .addParam("addressd", "Address of DAO contract")
+  .addParam("propid", "Proposal id")
   .setAction(async (taskArguments, hre) => {
-      const contractSchema = require("./artifacts/contracts/Bridge.sol/Bridge.json");
+    const daoContractSchema = require("./artifacts/contracts/DAO.sol/DAO.json");
+
+    const alchemyProvider = new hre.ethers.providers.AlchemyProvider("rinkeby", process.env.ALCHEMY_KEY);
+    const walletOwner = new hre.ethers.Wallet(process.env.METAMASK_PRIVATE_KEY, alchemyProvider);
+    const dao = new hre.ethers.Contract(taskArguments.addressd, daoContractSchema.abi, walletOwner);
+
+    const depositTx = await dao.finishProposal(taskArguments.propid);
+
+    console.log("Receipt: ", depositTx);
+})
+;
+
+task("deposit", "Deposit")
+  .addParam("addressd", "Address of DAO contract")
+  .addParam("amount", "Amount to deposit")
+  .setAction(async (taskArguments, hre) => {
+      const daoContractSchema = require("./artifacts/contracts/DAO.sol/DAO.json");
 
       const alchemyProvider = new hre.ethers.providers.AlchemyProvider("rinkeby", process.env.ALCHEMY_KEY);
       const walletOwner = new hre.ethers.Wallet(process.env.METAMASK_PRIVATE_KEY, alchemyProvider);
-      const bridge = new hre.ethers.Contract(taskArguments.bridge, contractSchema.abi, walletOwner);
+      const dao = new hre.ethers.Contract(taskArguments.addressd, daoContractSchema.abi, walletOwner);
 
-      const providerETH = new hre.ethers.providers.WebSocketProvider(process.env.RINKEBY_WS);
-      const providerBNB = new hre.ethers.providers.WebSocketProvider(process.env.BSCTEST_WS);
-      const filter = bridge.filters.swapFinalized(
-        process.env.METAMASK_PUBLIC_KEY, taskArguments.token, null, null, null, null, null
-      );
-      providerETH.on(filter, (event) => console.log("[ETH] Swap finalized event:", event));
-      providerBNB.on(filter, (event) => console.log("[BSC] Swap finalized event:", event));
+      const depositTx = await dao.deposit(taskArguments.amount);
 
-      const swapTx = await bridge.redeem(
-        taskArguments.token, 
-        taskArguments.amount, 
-        taskArguments.chainfrom,
-        taskArguments.chainto,
-        taskArguments.nonce,
-        taskArguments.symbol
-      );
-
-      console.log("Receipt: ", swapTx);
+      console.log("Receipt: ", depositTx);
   })
 ;
 
-task("deposit", "")
-  .addParam("", "")
-  .setAction(async (taskArguments, hre) => {
-      const contractSchema = require("./artifacts/contracts/Bridge.sol/Bridge.json");
-
-      const alchemyProvider = new hre.ethers.providers.AlchemyProvider("rinkeby", process.env.ALCHEMY_KEY);
-      const walletOwner = new hre.ethers.Wallet(process.env.METAMASK_PRIVATE_KEY, alchemyProvider);
-      const bridge = new hre.ethers.Contract(taskArguments.bridge, contractSchema.abi, walletOwner);
-
-      const providerETH = new hre.ethers.providers.WebSocketProvider(process.env.RINKEBY_WS);
-      const providerBNB = new hre.ethers.providers.WebSocketProvider(process.env.BSCTEST_WS);
-      const filter = bridge.filters.swapFinalized(
-        process.env.METAMASK_PUBLIC_KEY, taskArguments.token, null, null, null, null, null
-      );
-      providerETH.on(filter, (event) => console.log("[ETH] Swap finalized event:", event));
-      providerBNB.on(filter, (event) => console.log("[BSC] Swap finalized event:", event));
-
-      const swapTx = await bridge.redeem(
-        taskArguments.token, 
-        taskArguments.amount, 
-        taskArguments.chainfrom,
-        taskArguments.chainto,
-        taskArguments.nonce,
-        taskArguments.symbol
-      );
-
-      console.log("Receipt: ", swapTx);
-  })
-;
-*/
 const config: HardhatUserConfig = {
   solidity: "0.8.11",
   networks: {
-    ropsten: {
-      url: process.env.ROPSTEN_URL || "",
-      accounts:
-        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
-    },
+    rinkeby: {
+      url: process.env.RINKEBY_URL,
+      accounts: [process.env.METAMASK_PRIVATE_KEY],
+      gas: 2100000,
+      gasPrice: 8000000000
+    }
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,

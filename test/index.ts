@@ -1,3 +1,4 @@
+/* eslint-disable node/no-missing-import */
 /* eslint-disable spaced-comment */
 /* eslint-disable node/no-unsupported-features/node-builtins */
 /* eslint-disable no-var */
@@ -6,19 +7,7 @@
 
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
-
-const THREE_DAYS_IN_SECONDS = 60 * 60 * 24 * 3;
-const TOKEN_INITIAL_SUPPLY = 1001;
-const QUORUM = 700;
-const HUNDRED_TOKENS = ethers.utils.parseUnits("100", 0);
-const FIFTY_TOKENS = ethers.utils.parseUnits("50", 0);
-const JSON_ABI = [{
-  "inputs": [{ "internalType": "address", "name": "chair", "type": "address" }],
-  "name": "performProposalAction",
-  "outputs": [{ "internalType": "bool", "name": "isPerformed", "type": "bool" }],
-  "stateMutability": "nonpayable",
-  "type": "function"
-}];
+import { FIFTY_TOKENS, HUNDRED_TOKENS, JSON_ABI, QUORUM, THREE_DAYS_IN_SECONDS, TOKEN_INITIAL_SUPPLY, TOKEN_NAME, TOKEN_SYMBOL } from "../hardhat.config";
 
 describe("DAO", async () => {
   let DAO: any, dao: any, DAOToken: any, daoToken: any, DAOAssistant: any, daoAssistant: any;
@@ -28,20 +17,19 @@ describe("DAO", async () => {
   beforeEach(async () => {
     [deployer, chair, regularUser1, regularUser2, regularUser3, regularUser4] = await ethers.getSigners();
 
-    DAOAssistant = await ethers.getContractFactory("DAOAssistant");
-    daoAssistant = await DAOAssistant.deploy();
-    await daoAssistant.deployed();
-
     DAOToken = await ethers.getContractFactory("DAOToken");
-    daoToken = await DAOToken.deploy(TOKEN_INITIAL_SUPPLY, "DAOToken", "DAOT");
+    daoToken = await DAOToken.deploy(TOKEN_INITIAL_SUPPLY, TOKEN_NAME, TOKEN_SYMBOL);
     await daoToken.deployed();
 
     DAO = await ethers.getContractFactory("DAO");
     dao = await DAO.deploy(chair.address, daoToken.address, QUORUM, THREE_DAYS_IN_SECONDS);
     await dao.deployed();
 
+    DAOAssistant = await ethers.getContractFactory("DAOAssistant");
+    daoAssistant = await DAOAssistant.deploy(dao.address);
+    await daoAssistant.deployed();
+
     await daoToken.transfer(regularUser1.address, 100);
-    await daoAssistant.setDao(dao.address);
   });
 
   it("Should return decimals", async () => {
@@ -75,6 +63,10 @@ describe("DAO", async () => {
   it("Should make deposit", async () => {
     const amount = 100;
     const balanceBeforeDeposit = await daoToken.balanceOf(regularUser1.address);
+    // try to deposit without giving dao approval to spend
+    await expect(dao.connect(regularUser1).deposit(amount))
+    .to.be.revertedWith("Deposit unsuccessful")
+    ;
     await daoToken.connect(regularUser1).approve(dao.address, amount);
     await dao.connect(regularUser1).deposit(amount);
     const balanceAfterDeposit = await daoToken.balanceOf(regularUser1.address);
@@ -130,7 +122,7 @@ describe("DAO", async () => {
     expect(proposal.votedForTotal).to.be.equal(HUNDRED_TOKENS);
   });
 
-  it("Should finish proposal", async () => {
+  it("Should finish proposal (most voted for)", async () => {
     const iface = new ethers.utils.Interface(JSON_ABI);
     const calldata = iface.encodeFunctionData('performProposalAction',
       [daoAssistant.address]
@@ -179,12 +171,16 @@ describe("DAO", async () => {
     .to.be.revertedWith("Can't withdraw while participating in ongoing proposals")
     ;
 
+    const finalizedProposalsCountBefore = await daoAssistant.finalizedProposalsCount();
     await dao.finishProposal(0);
+    const finalizedProposalsCountAfter = await daoAssistant.finalizedProposalsCount();
     const proposal = await dao.proposals(0);
     expect(proposal.isFinished).to.be.equal(true);
+    // bytecode execution counter must have been incremented since code was executed
+    expect(finalizedProposalsCountAfter.sub(finalizedProposalsCountBefore)).to.be.equal(1);
 
     // shouldn't be able to withdraw more than balance
-    expect(dao.connect(regularUser3).withdraw(600))
+    await expect(dao.connect(regularUser3).withdraw(600))
     .to.be.revertedWith("Amount exceeds balance")
     ;
 
@@ -200,11 +196,11 @@ describe("DAO", async () => {
     await daoToken.connect(regularUser3).approve(dao.address, user4Deposit);
     await dao.connect(regularUser3).deposit(user4Deposit);
     await expect(dao.connect(regularUser3).vote(0, true))
-    .to.be.revertedWith("Unable to vote: Proposal is finished")
+    .to.be.revertedWith("Voting is no longer possible")
     ;
   });
 
-  it("Should finish proposal2", async () => {
+  it("Should finish proposal (most voted against)", async () => {
     const iface = new ethers.utils.Interface(JSON_ABI);
     const calldata = iface.encodeFunctionData('performProposalAction',
       [daoAssistant.address]
@@ -233,15 +229,18 @@ describe("DAO", async () => {
     await dao.connect(regularUser3).deposit(user3Deposit);
     await dao.connect(regularUser3).vote(0, false);
 
+    const finalizedProposalsCountBefore = await daoAssistant.finalizedProposalsCount();
     await dao.finishProposal(0);
+    const finalizedProposalsCountAfter = await daoAssistant.finalizedProposalsCount();
     const proposal = await dao.proposals(0);
     expect(proposal.isFinished).to.be.equal(true);
+    // count must not have changed since bytecode wasn't executed by external contract
+    expect(finalizedProposalsCountBefore).to.be.equal(finalizedProposalsCountAfter);
 
     // should be able to withdraw after voting finishes
     const user3Withdraw = 100;
     await dao.connect(regularUser3).withdraw(100);
     const user3BalanceAfterWithdrawal = await dao.memberBalances(regularUser3.address);
     expect(user3Deposit - user3Withdraw).to.be.equal(parseInt(ethers.utils.formatUnits(user3BalanceAfterWithdrawal, 0)));
-
   });
 });

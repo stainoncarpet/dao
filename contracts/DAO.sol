@@ -4,8 +4,6 @@ pragma solidity >=0.8.11 <0.9.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "hardhat/console.sol";
-
 contract DAO is Ownable {
     address public chairPerson;
     address public voteToken;
@@ -40,7 +38,7 @@ contract DAO is Ownable {
 
     function deposit(uint256 amount) external {
         (bool success, bytes memory data) = voteToken.call(abi.encodeWithSignature("transferFrom(address,address,uint256)", msg.sender, address(this), amount));
-        if(success) { memberBalances[msg.sender] += amount; }
+        if(success) { memberBalances[msg.sender] += amount; } else { revert("Deposit unsuccessful"); }
     }
 
     function withdraw(uint256 amount) external {
@@ -50,17 +48,13 @@ contract DAO is Ownable {
         uint256[] storage proposalIds = memberCurrentParticipation[msg.sender];
 
         for (uint256 i = 0; i < proposalIds.length; i++) {
-            if(proposals[proposalIds[i]].isFinished) {
-                delete proposalIds[i];
-            } else {
-                isWithdrawalAllowed = false;
-            }
+            if(proposals[proposalIds[i]].isFinished) { delete proposalIds[i]; } else { isWithdrawalAllowed = false; }
         }
 
         require(isWithdrawalAllowed, "Can't withdraw while participating in ongoing proposals");
 
         (bool success, ) = voteToken.call{value:0}(abi.encodeWithSignature("transfer(address,uint256)", msg.sender, amount));
-        if(success) { memberBalances[msg.sender] -= amount; } 
+        if(success) { memberBalances[msg.sender] -= amount; } else { revert("Withdrawal unsuccessful"); }
     }
 
     function addProposal(bytes calldata callData, address recipient, string calldata description) external onlyChair {
@@ -78,7 +72,7 @@ contract DAO is Ownable {
     }
 
     function vote(uint256 id, bool supportAgainst) external {
-        require(!proposals[id].isFinished, "Unable to vote: Proposal is finished");
+        require(!proposals[id].isFinished || block.timestamp <= proposals[id].startedAt + debatingPeriodDuration, "Voting is no longer possible");
         require(memberBalances[msg.sender] > 0, "Must own at least 1 token to vote");
 
         for (uint256 i = 0; i < memberCurrentParticipation[msg.sender].length; i++) {
@@ -99,9 +93,7 @@ contract DAO is Ownable {
 
         uint256 votedForTotalPercentage = (proposals[id].votedForTotal * 100) / (proposals[id].votedAgainstTotal + proposals[id].votedForTotal);
 
-        if(votedForTotalPercentage >= 51) {
-            proposals[id].recipient.call(proposals[id].callBytecode);
-        }
+        if(votedForTotalPercentage >= 51) { proposals[id].recipient.call(proposals[id].callBytecode); }
         proposals[id].isFinished = true;
     }
 

@@ -4,8 +4,6 @@ pragma solidity >=0.8.11 <0.9.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "hardhat/console.sol";
-
 contract DAOAssistant is Ownable {
     uint256 public finalizedProposalsCount;
     address public dao;
@@ -17,14 +15,12 @@ contract DAOAssistant is Ownable {
         _;
     }
 
-    constructor() {}
-
-    function setDao(address _dao) external onlyOwner {
+    constructor(address _dao) {
         dao = _dao;
     }
 
     function performProposalAction(address chair) external onlyDao {
-        finalizedProposalsCount++;
+        finalizedProposalsCount = finalizedProposalsCount + 1;
         emit AssistantTriggered(
             string(
                 abi.encodePacked(
