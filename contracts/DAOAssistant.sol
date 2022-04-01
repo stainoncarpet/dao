@@ -8,12 +8,34 @@ import "hardhat/console.sol";
 
 contract DAOAssistant is Ownable {
     uint256 public finalizedProposalsCount;
+    address public dao;
+
+    event AssistantTriggered(string indexed);
+
+    modifier onlyDao() {
+        require(msg.sender == dao, "Only DAO can perform this action");
+        _;
+    }
 
     constructor() {}
 
-    function performProposalAction() external returns(bool){
+    function setDao(address _dao) external onlyOwner {
+        dao = _dao;
+    }
+
+    function performProposalAction(address chair) external onlyDao {
         finalizedProposalsCount++;
-        return true;
+        emit AssistantTriggered(
+            string(
+                abi.encodePacked(
+                    "Proposals Count: ", 
+                    finalizedProposalsCount,
+                    "Chair Person: ",
+                    chair
+                )
+            )
+        );
+        console.log("ASS?");
     }
 
     function destroyContract() external onlyOwner {
