@@ -48,7 +48,10 @@ contract DAO is Ownable {
         uint256[] storage proposalIds = memberCurrentParticipation[msg.sender];
 
         for (uint256 i = 0; i < proposalIds.length; i++) {
-            if(proposals[proposalIds[i]].isFinished) { delete proposalIds[i]; } else { isWithdrawalAllowed = false; }
+            if(proposals[proposalIds[i]].isFinished) { 
+                proposalIds[i] = proposalIds[proposalIds.length - 1];
+                proposalIds.pop();
+            } else { isWithdrawalAllowed = false; }
         }
 
         require(isWithdrawalAllowed, "Can't withdraw while participating in ongoing proposals");
