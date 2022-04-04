@@ -8,7 +8,7 @@ contract DAOAssistant is Ownable {
     uint256 public finalizedProposalsCount;
     address public dao;
 
-    event AssistantTriggered(string indexed);
+    event ProposalActionPerformed(string indexed);
 
     modifier onlyDao() {
         require(msg.sender == dao, "Only DAO can perform this action");
@@ -21,7 +21,7 @@ contract DAOAssistant is Ownable {
 
     function performProposalAction(address chair) external onlyDao {
         finalizedProposalsCount = finalizedProposalsCount + 1;
-        emit AssistantTriggered(
+        emit ProposalActionPerformed(
             string(
                 abi.encodePacked(
                     "Proposals Count: ", 

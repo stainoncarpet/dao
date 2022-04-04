@@ -12,6 +12,12 @@ contract DAO is Ownable {
     mapping(address => uint256) public memberBalances;
     mapping(address => uint256[]) public memberCurrentParticipation;
 
+    event Deposit(address indexed depositor, uint256 indexed amount);
+    event Withdrawal(address indexed withdrawer, uint256 indexed amount);
+    event ProposalAdded(uint256 indexed id, string indexed description);
+    event Vote(uint256 indexed proposalId, bool indexed isVoteFor, address indexed voter);
+    event ProposalFinished(uint256 indexed id, string indexed description, bool indexed isPassed);
+
     struct Proposal {
         uint256 startedAt;
         uint256 votedForTotal;
@@ -38,7 +44,10 @@ contract DAO is Ownable {
 
     function deposit(uint256 amount) external {
         (bool success, bytes memory data) = voteToken.call(abi.encodeWithSignature("transferFrom(address,address,uint256)", msg.sender, address(this), amount));
-        if(success) { memberBalances[msg.sender] += amount; } else { revert("Deposit unsuccessful"); }
+        if(success) { 
+            memberBalances[msg.sender] += amount; 
+            emit Deposit(msg.sender, amount);
+        } else { revert("Deposit unsuccessful"); }
     }
 
     function withdraw(uint256 amount) external {
@@ -57,7 +66,10 @@ contract DAO is Ownable {
         require(isWithdrawalAllowed, "Can't withdraw while participating in ongoing proposals");
 
         (bool success, ) = voteToken.call{value:0}(abi.encodeWithSignature("transfer(address,uint256)", msg.sender, amount));
-        if(success) { memberBalances[msg.sender] -= amount; } else { revert("Withdrawal unsuccessful"); }
+        if(success) { 
+            memberBalances[msg.sender] -= amount; 
+            emit Withdrawal(msg.sender, amount);
+        } else { revert("Withdrawal unsuccessful"); }
     }
 
     function addProposal(bytes calldata callData, address recipient, string calldata description) external onlyChair {
@@ -72,6 +84,7 @@ contract DAO is Ownable {
         });
 
         proposals.push(proposal);
+        emit ProposalAdded(proposals.length - 1, description);
     }
 
     function vote(uint256 id, bool supportAgainst) external {
@@ -88,6 +101,7 @@ contract DAO is Ownable {
         ;
 
         memberCurrentParticipation[msg.sender].push(id);
+        emit Vote(id, supportAgainst, msg.sender);
     }
 
     function finishProposal(uint256 id) external {
@@ -96,7 +110,12 @@ contract DAO is Ownable {
 
         uint256 votedForTotalPercentage = (proposals[id].votedForTotal * 100) / (proposals[id].votedAgainstTotal + proposals[id].votedForTotal);
 
-        if(votedForTotalPercentage >= 51) { proposals[id].recipient.call(proposals[id].callBytecode); }
+        if(votedForTotalPercentage >= 51) { 
+            proposals[id].recipient.call(proposals[id].callBytecode); 
+            emit ProposalFinished(id, proposals[id].description, true);
+        } else {
+            emit ProposalFinished(id, proposals[id].description, false);
+        }
         proposals[id].isFinished = true;
     }
 
