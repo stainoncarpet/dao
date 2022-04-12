@@ -10,7 +10,10 @@ contract DAO is Ownable {
     uint256 public minimumQuorum;
     uint256 public debatingPeriodDuration;
     mapping(address => uint256) public memberBalances;
-    mapping(address => uint256[]) public memberCurrentParticipation;
+
+    mapping(uint256 => address[]) votersOf;
+    mapping(address => uint256) public memberCurrentParticipationCount;
+    mapping(address => mapping(uint256 => bool)) public memberCurrentParticipationRegistry;
 
     event Deposit(address indexed depositor, uint256 indexed amount);
     event Withdrawal(address indexed withdrawer, uint256 indexed amount);
@@ -26,6 +29,7 @@ contract DAO is Ownable {
         bytes callBytecode;
         address recipient;
         bool isFinished;
+        bool isSuccessful;
     }
 
     Proposal[] public proposals;
@@ -52,18 +56,7 @@ contract DAO is Ownable {
 
     function withdraw(uint256 amount) external {
         require(memberBalances[msg.sender] >= amount, "Amount exceeds balance");
-
-        bool isWithdrawalAllowed = true;
-        uint256[] storage proposalIds = memberCurrentParticipation[msg.sender];
-
-        for (uint256 i = 0; i < proposalIds.length; i++) {
-            if(proposals[proposalIds[i]].isFinished) { 
-                proposalIds[i] = proposalIds[proposalIds.length - 1];
-                proposalIds.pop();
-            } else { isWithdrawalAllowed = false; }
-        }
-
-        require(isWithdrawalAllowed, "Can't withdraw while participating in ongoing proposals");
+        require(memberCurrentParticipationCount[msg.sender] == 0, "Can't withdraw while participating in ongoing proposals");
 
         (bool success, ) = voteToken.call{value:0}(abi.encodeWithSignature("transfer(address,uint256)", msg.sender, amount));
         if(success) { 
@@ -80,7 +73,8 @@ contract DAO is Ownable {
             description: description,
             callBytecode: callData,
             recipient: recipient,
-            isFinished: false
+            isFinished: false,
+            isSuccessful: false
         });
 
         proposals.push(proposal);
@@ -90,33 +84,46 @@ contract DAO is Ownable {
     function vote(uint256 id, bool supportAgainst) external {
         require(!proposals[id].isFinished || block.timestamp <= proposals[id].startedAt + debatingPeriodDuration, "Voting is no longer possible");
         require(memberBalances[msg.sender] > 0, "Must own at least 1 token to vote");
-
-        for (uint256 i = 0; i < memberCurrentParticipation[msg.sender].length; i++) {
-            if(memberCurrentParticipation[msg.sender][i] == id){ revert("Already voted"); }
-        }
+        require(!memberCurrentParticipationRegistry[msg.sender][id], "Already voted");
 
         supportAgainst 
             ? proposals[id].votedForTotal += memberBalances[msg.sender] 
             : proposals[id].votedAgainstTotal += memberBalances[msg.sender]
         ;
 
-        memberCurrentParticipation[msg.sender].push(id);
+        memberCurrentParticipationRegistry[msg.sender][id] = true;
+        memberCurrentParticipationCount[msg.sender]++;
+        votersOf[id].push(msg.sender);
+
         emit Vote(id, supportAgainst, msg.sender);
     }
 
     function finishProposal(uint256 id) external {
+        require(!proposals[id].isFinished, "Voting within proposal is no longer allowed");
         require(block.timestamp >= proposals[id].startedAt + debatingPeriodDuration, "Too early to finish");
-        require(proposals[id].votedForTotal + proposals[id].votedAgainstTotal >= minimumQuorum, "Not enough tokens voted");
+
+        if(proposals[id].votedForTotal + proposals[id].votedAgainstTotal < minimumQuorum) {
+            proposals[id].isSuccessful = false;
+            proposals[id].isFinished = true;
+            revert("Not enough tokens voted");
+        }
 
         uint256 votedForTotalPercentage = (proposals[id].votedForTotal * 100) / (proposals[id].votedAgainstTotal + proposals[id].votedForTotal);
 
         if(votedForTotalPercentage >= 51) { 
-            proposals[id].recipient.call(proposals[id].callBytecode); 
+            proposals[id].recipient.call(proposals[id].callBytecode);
+            proposals[id].isSuccessful = true;
             emit ProposalFinished(id, proposals[id].description, true);
         } else {
             emit ProposalFinished(id, proposals[id].description, false);
         }
         proposals[id].isFinished = true;
+
+        // update participation data
+        for (uint256 i = 0; i < votersOf[id].length; i++) {
+            memberCurrentParticipationCount[votersOf[id][i]]--;
+            memberCurrentParticipationRegistry[votersOf[id][i]][id] = false;
+        }
     }
 
     function destroyContract() external onlyOwner {

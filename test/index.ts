@@ -176,6 +176,7 @@ describe("DAO", async () => {
     const finalizedProposalsCountAfter = await daoAssistant.finalizedProposalsCount();
     const proposal = await dao.proposals(0);
     expect(proposal.isFinished).to.be.equal(true);
+    expect(proposal.isSuccessful).to.be.equal(true);
     // bytecode execution counter must have been incremented since code was executed
     expect(finalizedProposalsCountAfter.sub(finalizedProposalsCountBefore)).to.be.equal(1);
 
@@ -197,6 +198,11 @@ describe("DAO", async () => {
     await dao.connect(regularUser3).deposit(user4Deposit);
     await expect(dao.connect(regularUser3).vote(0, true))
     .to.be.revertedWith("Voting is no longer possible")
+    ;
+
+    // try to execute proposal code again
+    await expect(dao.finishProposal(0))
+    .to.be.revertedWith("Voting within proposal is no longer allowed")
     ;
   });
 
@@ -234,6 +240,7 @@ describe("DAO", async () => {
     const finalizedProposalsCountAfter = await daoAssistant.finalizedProposalsCount();
     const proposal = await dao.proposals(0);
     expect(proposal.isFinished).to.be.equal(true);
+    expect(proposal.isSuccessful).to.be.equal(false);
     // count must not have changed since bytecode wasn't executed by external contract
     expect(finalizedProposalsCountBefore).to.be.equal(finalizedProposalsCountAfter);
 
